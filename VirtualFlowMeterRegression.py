@@ -24,8 +24,11 @@ import tensorflow as tf
 
 from numpy.random import seed
 
-random_seed = 433
+random_seed = 232323
 seed(random_seed)
+#from tensorflow import set_random_seed
+#set_random_seed(random_seed)
+tf.random.set_seed(random_seed)
 
 RA0034_data = pd.read_excel("D:\Prabhaker\Data Science\Keras\RA0034.xlsx")
 #Let's check how many data points we have.
@@ -65,29 +68,26 @@ predictors_df['BINNED'] = np.searchsorted(bins, predictors_df['CHOKE'].values)
 
 # Get the average bin value
 predictors_flp = predictors_df.groupby(['BINNED'])['FLP'].mean().reset_index()
-predictors_flp['FLP'] = predictors_flp['FLP'].astype(float)
+predictors_flp = predictors_flp.set_index('BINNED')
 
 predictors_wht = predictors_df.groupby(['BINNED'])['WHT'].mean().reset_index()
-predictors_wht['WHT'] = predictors_wht['WHT'].astype(float)
+predictors_wht = predictors_wht.set_index('BINNED')
+
+#predictors_flp.loc[3].tolist()[0]
 
 # make a copy of dataframe
-predictors = predictors_df       
-        
+predictors = predictors_df[['CHOKE','WHP','FLP','WHT']]   
 
 # Replace nan with average of same bin results (FLP)
 predictors['FLP'] = predictors_df.apply(
-    lambda row: predictors_flp['FLP'][predictors_flp['BINNED']==row['BINNED']] if np.isnan(row['FLP']) else row['FLP'],
+    lambda row: predictors_flp.loc[row['BINNED']].tolist()[0] if np.isnan(row['FLP']) else row['FLP'],
     axis=1
 )
 # Replace nan with average of same bin results (WHT)
 predictors['WHT'] = predictors_df.apply(
-    lambda row: predictors_wht['WHT'][predictors_wht['BINNED']==row['BINNED']] if np.isnan(row['WHT']) else row['WHT'],
+    lambda row: predictors_wht.loc[row['BINNED']].tolist()[0] if np.isnan(row['WHT']) else row['WHT'],
     axis=1
 )
-
-
-
-print(predictors_flp['FLP'][predictors_wht['BINNED']==3][1])
 
 #Let's check the dataset still any missing values.
 predictors.isnull().sum()
@@ -99,8 +99,6 @@ plt.hist(predictors['FLP'], 4, normed=1, facecolor='green', alpha=0.75)
 plt.hist(predictors['WHT'], 4, normed=1, facecolor='blue', alpha=0.75)
 
 predictors.head()
-
-predictors = pd.read_csv("D:\Prabhaker\Data Science\Keras\RA0034_predectors.csv")
 
 #Normalize the data by substracting the mean and dividing by the standard deviation
 predictors_norm = (predictors - predictors.mean()) / (predictors.max()- predictors.min())
@@ -114,19 +112,14 @@ target.head()
 n_cols = predictors.shape[1] # number of predictors
 
 # Split the data in te Traiing and Testing set
-predictors_train, predictors_test, target_train, target_test = train_test_split(predictors_norm, target, test_size=0.3)
-
-predictors_test.to_csv('RA0034.csv')
-
-#predictors.to_csv('RA0034_predectors.csv')
-
-
+predictors_train, predictors_test, target_train, target_test = train_test_split(predictors, target, test_size=0.3)
 
 # Building the Neural Network
 def regression_model():
     #create model
     model = Sequential()
-    model.add(Dense(4,activation='relu', input_shape=(n_cols,)))
+    model.add(Dense(16,activation='relu', input_shape=(n_cols,)))
+    model.add(Dense(16,activation='relu'))
     #model.add(Dense(8,activation='relu'))
     #model.add(Dense(16,activation='relu'))    
     model.add(Dense(1))
@@ -139,7 +132,7 @@ def regression_model():
 # create model by calling the function
 model = regression_model()
 
-num_epochs = 100
+num_epochs = 800
 batch_size = 5
 validation_split = 0.20 # 30%
 
@@ -152,9 +145,12 @@ evalu_result = model.evaluate(predictors_test, target_test, batch_size=batch_siz
 print(evalu_result)
 
 pred_test = model.predict(predictors_test)
+#my_list = map(lambda x: x[0], pred_test)
+#pred_test = pd.Series(my_list)
+pred_test = pd.Series(pred_test.reshape(-1))
+type(pred_test)
 
 print("Shape: {}".format(pred_test.shape))
-print(pred_test.get_values())
 
 mean_square_error = mean_squared_error(target_test,pred_test)
 # The mean squared error

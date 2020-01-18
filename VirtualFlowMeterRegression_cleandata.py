@@ -12,13 +12,17 @@ from keras.utils import print_summary
 
 from keras.models import Sequential
 from keras.layers import Dense
+from keras.losses import mean_squared_error, mean_squared_logarithmic_error
+from keras import metrics
+from keras import callbacks
 
-import matplotlib.pyplot as plt
+#import matplotlib.pyplot as plt
 
 from sklearn.model_selection import train_test_split
-from sklearn.metrics import accuracy_score
-from sklearn import metrics
-from sklearn.metrics import mean_squared_error, r2_score
+#from sklearn.metrics import accuracy_score
+#from sklearn import metrics
+#from sklearn.metrics import mean_squared_error, r2_score
+
 
 import tensorflow as tf
 
@@ -30,30 +34,30 @@ seed(random_seed)
 #set_random_seed(random_seed)
 tf.random.set_seed(random_seed)
 
-data = pd.read_csv("D:\Prabhaker\Data Science\Keras\RA0034_predectors.csv")
+RA0034_data = pd.read_excel("D:\Prabhaker\Data Science\Keras\RA0034.xlsx")
 #Let's check how many data points we have.
-data.shape
+RA0034_data.shape
 
 #Let's check the dataset for any missing values.
-data.describe()
+RA0034_data.describe()
 
-data.isnull().sum()
+RA0034_data.isnull().sum()
 
 #Split data into predictors and target
 
-data.columns
+RA0034_data.columns
 ''''UWI', 'TEST_DATE', 'OBJECTIVE', 'CHOKE', 'Choke (in)', 'WHP', 'FLP',
        'WHT', 'FLPT', 'OIL_RATE', 'WATER_RATE', 'GAS_RATE', 'GAS_RATE (MMSCF)',
        'GOR']
 '''
 
-data[['CHOKE','WHP','FLP','WHT']].plot(kind='hist')
+RA0034_data[['CHOKE','WHP','FLP','WHT']].plot(kind='hist')
 
-predictors_df = data[['CHOKE','WHP','FLP','WHT']] 
+predictors_df = RA0034_data[['CHOKE','WHP','FLP','WHT']] 
 
-target = data['OIL_RATE']
+target = RA0034_data['OIL_RATE']
 
-data[['CHOKE','WHP','FLP','WHT']].describe()
+RA0034_data[['CHOKE','WHP','FLP','WHT']].describe()
 
 predictors_df.isnull().sum()
 '''
@@ -62,12 +66,46 @@ WHP       0
 FLP      11
 WHT      11
 '''
+bins = [0,10,20,30,40,50,60,70,80]
 
+predictors_df['BINNED'] = np.searchsorted(bins, predictors_df['CHOKE'].values)
 
-predictors_df.head()
+# Get the average bin value
+predictors_flp = predictors_df.groupby(['BINNED'])['FLP'].mean().reset_index()
+predictors_flp = predictors_flp.set_index('BINNED')
+
+predictors_wht = predictors_df.groupby(['BINNED'])['WHT'].mean().reset_index()
+predictors_wht = predictors_wht.set_index('BINNED')
+
+#predictors_flp.loc[3].tolist()[0]
+
+# make a copy of dataframe
+predictors = predictors_df[['CHOKE','WHP','FLP','WHT']]   
+
+# Replace nan with average of same bin results (FLP)
+predictors['FLP'] = predictors_df.apply(
+    lambda row: predictors_flp.loc[row['BINNED']].tolist()[0] if np.isnan(row['FLP']) else row['FLP'],
+    axis=1
+)
+# Replace nan with average of same bin results (WHT)
+predictors['WHT'] = predictors_df.apply(
+    lambda row: predictors_wht.loc[row['BINNED']].tolist()[0] if np.isnan(row['WHT']) else row['WHT'],
+    axis=1
+)
+
+predictors_df.isnull().sum()
+'''
+CHOKE     0
+WHP       0
+FLP      11
+WHT      11
+'''
+import seaborn as sns
+sns.pairplot(predictors, diag_kind="kde")
+
 
 #Normalize the data by substracting the mean and dividing by the standard deviation
-predictors_norm = (predictors_df - predictors_df.mean()) / (predictors_df.max()- predictors_df.min())
+predictors_norm = (predictors - predictors.mean()) / (predictors.max()- predictors.min())
 predictors_norm.head()
 
 print(target.shape)
@@ -75,47 +113,99 @@ print(target.shape)
 target.head()
 
 #Let's save the number of predictors to n_cols since we will need this number when building our network.
-n_cols = predictors_df.shape[1] # number of predictors
+n_cols = predictors.shape[1] # number of predictors
 
 # Split the data in te Traiing and Testing set
-predictors_train, predictors_test, target_train, target_test = train_test_split(predictors_norm, target, test_size=0.3)
+predictors_train, predictors_test, target_train, target_test = train_test_split(predictors, target, test_size=0.2)
 
-predictors_test.to_csv('RA0034.csv')
+#predictors_test.to_csv('RA0034.csv')
+predictors_status = predictors.describe()
+predictors_status.pop("CHOKE")
+predictors_status =predictors_status.transpose()
+predictors_status
 
 #predictors.to_csv('RA0034_predectors.csv')
 
-
-
 # Building the Neural Network
-def regression_model():
+def regression_model(dim, regress=False):
     #create model
     model = Sequential()
-    model.add(Dense(10,activation='relu', input_shape=(n_cols,)))
-    model.add(Dense(10,activation='relu'))
-    #model.add(Dense(16,activation='relu'))    
-    model.add(Dense(1))
+    model.add(Dense(16,activation='relu', input_dim=dim))
+    model.add(Dense(8,activation='relu'))
+     
+    # check to see if the regression node should be added
     
+    if regress :        
+        model.add(Dense(1, activation="linear"))
+    
+    #optimizer = tf.keras.optimizers.RMSprop(0.001)
     # compile model
-    model.compile(optimizer='adam', loss='mean_squared_error')
+    model.compile(loss='mse',
+                optimizer='adam',
+                metrics=['mae', 'mse'])
+   
     return model
 
 # Train and Test The model
 # create model by calling the function
-model = regression_model()
+model = regression_model(predictors.shape[1], regress=True)
 
-num_epochs = 200
-batch_size = 8
+
+    
+num_epochs = 500
+batch_size = 5
 validation_split = 0.20 # 30%
 
 # Fit the model (train and test the model at the same time using the fit method. We will leave out 30% of the data for validation and we will train the model for 100 epochs.)
-history = model.fit(predictors_train, target_train, validation_split=validation_split, epochs=num_epochs, verbose=1)
+history = model.fit(predictors_train, target_train, validation_split=validation_split, epochs=num_epochs, verbose=2)
 
-#model.load_weights('d:\temp\best_weights.hdf5')
+hist = pd.DataFrame(history.history)
+hist['epoch'] = history.epoch
+hist.tail()
 
-evalu_result = model.evaluate(predictors_test, target_test, batch_size=batch_size)
-print(evalu_result)
+import tensorflow_docs as tfdocs
+import tensorflow_docs.plots
+import tensorflow_docs.modeling
+plotter = tfdocs.plots.HistoryPlotter(smoothing_std=2)
 
-pred_test = model.predict(predictors_test)
+import matplotlib.pyplot as plt
+plotter.plot({'Basic': history}, metric = "mae")
+
+plotter.plot({'Basic': history}, metric = "mse")
+
+
+model = regression_model(predictors.shape[1], regress=True)
+
+# The patience parameter is the amount of epochs to check for improvement
+early_stop = callbacks.EarlyStopping(monitor='val_loss', patience=10)
+
+early_history = model.fit(predictors_train, target_train, 
+                    epochs=num_epochs, validation_split = validation_split, verbose=1, 
+                    callbacks=[early_stop, tfdocs.modeling.EpochDots()])
+
+plotter.plot({'Early Stopping': early_history}, metric = "mae")
+
+loss, mae, mse = model.evaluate(predictors_test, target_test, verbose=2)
+print("Testing set Mean Abs Error: {:5.2f} ".format(mae))
+
+pred_test = model.predict(predictors_test).flatten()
+# convert to series
+pred_test = pd.Series(pred_test.reshape(-1))
+type(pred_test)
+
+a = plt.axes(aspect='equal')
+plt.scatter(target_test, pred_test)
+plt.xlabel('True Values [OIL_RATE]')
+plt.ylabel('Predictions [OIL_RATE]')
+lims = [0, 50]
+plt.xlim(lims)
+plt.ylim(lims)
+_ = plt.plot(lims, lims)
+
+error = pred_test - target_test
+plt.hist(error, bins = 25)
+plt.xlabel("Prediction Error [OIL_RATE]")
+_ = plt.ylabel("Count")
 
 # new Data predict
 #[['CHOKE','WHP','FLP','WHT']]
@@ -129,13 +219,13 @@ mean_square_error = mean_squared_error(target_test,pred_test)
 # The mean squared error
 print('Mean squared error: %.2f' % mean_square_error)
 
-# The coefficient of determination: 1 is perfect prediction
-print('Coefficient of determination: %.2f' % r2_score(target_test, pred_test))
-
-mean = np.mean(mean_square_error)
-standard_deviation = np.std(mean_square_error)
-print("Mean Square error: ",mean)
-print("Standard deviation", standard_deviation)
+mean_square_logarithmic_error = mean_squared_logarithmic_error(target_test, pred_test)
+# The mean squared error
+print('Mean squared logarithmic error: %.2f' % mean_square_logarithmic_error)
 
 
-print_summary(model, line_length=None, positions=None, print_fn=None)
+acc = metrics.accuracy(target_test, pred_test)
+print('Accuracy: {}'.format(acc))
+
+
+#print_summary(model, line_length=None, positions=None, print_fn=None)
