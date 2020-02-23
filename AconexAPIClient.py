@@ -17,6 +17,9 @@ import os
 
 from pathlib import Path
 
+import xml.dom.minidom
+
+
 class AconexAPIClient:
     
     def __init__(self, projectsurl, secreatkey, username, password):
@@ -100,6 +103,13 @@ class AconexAPIClient:
             response.encoding ='utf-8'
             
         return response
+    
+    def formatxmlstring(self, uglyxml):
+        
+        xmlstr = xml.dom.minidom.parseString(uglyxml)
+        xml_pretty_str = xmlstr.toprettyxml()
+        
+        return xml_pretty_str
 
         
 def main():
@@ -128,7 +138,7 @@ def main():
     response = apiclient.loadProjects()
     content = response.text
     filename = Path('{}Aconex-{}.xml'.format(downloadBasePath, "Projects"))
-    filename.write_text(content)  
+    filename.write_text(apiclient.formatxmlstring(content))  
        
     # Create Project ID folder to group all items for project
     projectPath = '{}\\{}\\'.format(downloadBasePath,sampleProjectid)
@@ -141,22 +151,22 @@ def main():
     response1 = apiclient.loadDocumentRegisterSchema(sampleProjectid)
     content1 = response1.text
     filename1 = Path('{}\\{}.xml'.format(projectPath,"DocRegisterSchema"))
-    filename1.write_text(content1)     
+    filename1.write_text(apiclient.formatxmlstring(content1))     
     
     response2 = apiclient.loadDocumentRegister(sampleProjectid)
     content2 = response2.text
     filename2 = Path('{}\\{}.xml'.format(projectPath, "DocRegister"))
-    filename2.write_text(content2) 
+    filename2.write_text(apiclient.formatxmlstring(content2)) 
     
     response3 = apiclient.loadDocumentMetadata(sampleProjectid, sampleDocId)
     content3 = response3.text
     filename3 = Path('{}\\{}-{}.xml'.format(projectPath,sampleDocId,"DocumentMetadata"))
-    filename3.write_text(content3) 
+    filename3.write_text(apiclient.formatxmlstring(content3)) 
     
     response4 = apiclient.loadDocumentVersions(sampleProjectid, sampleTrackId)
     content4 = response4.text
     filename4 = Path('{}\\{}-{}.xml'.format(projectPath, sampleTrackId,"DocumentVersions"))
-    filename4.write_text(content4) 
+    filename4.write_text(apiclient.formatxmlstring(content4)) 
     
     response5 = apiclient.downloadContentFile(sampleProjectid, sampleDocId)
     content5 = response5.content
